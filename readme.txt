@@ -4,7 +4,7 @@ Tags: cloudflare,turnstile,captcha,protect,spam
 Donate link: https://www.elliotsowersby.com/donate/
 Requires at least: 4.7
 Tested up to: 7.0
-Stable Tag: 1.41.1
+Stable Tag: 1.42.0
 License: GPLv3 or later.
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -208,6 +208,17 @@ If you are still having issues, please post a <a href="https://wordpress.org/sup
 You can report security bugs through the Patchstack Vulnerability Disclosure Program. The Patchstack team help validate, triage and handle any security vulnerabilities. [Report a security vulnerability.](https://patchstack.com/database/vdp/simple-cloudflare-turnstile)
 
 == Changelog ===
+
+= Version 1.42.0 - 26th July 2026 =
+- New: The IP whitelist now supports CIDR ranges (IPv4 and IPv6), e.g. 203.0.113.0/24 or 2001:db8::/32, so visitors with a dynamic or dual-stack (IPv4/IPv6) address can be whitelisted by subnet instead of listing every individual IP.
+- Fix: IP whitelist matching now normalizes addresses, so an IPv6 address entered in a different textual format still matches correctly, and a visitor reported with an IPv4-mapped IPv6 address (e.g. ::ffff:203.0.113.5, common on dual-stack servers) still matches an IPv4 address or range. A /0 range such as 0.0.0.0/0 is now ignored, as it would switch Turnstile off for every visitor rather than whitelist anyone in particular.
+- Fix: Fixed a compatibility issue introduced in 1.41 where the login Turnstile widget could be reset while a two-factor prompt was open (e.g. Wordfence 2FA), causing the login to fail. The widget is now only refreshed after a failed login attempt, rather than on every submission.
+- Fix: Turnstile now always loads in explicit render mode, and widgets are rendered from a callback that Cloudflare invokes as soon as the API is ready. This fixes sites where the widget did not appear at all, and means it now still appears on slow connections, on sites using a "delay JavaScript" optimization, and in forms that are loaded in via AJAX such as comment forms and forms inside popups. The scripts that render the widget are now also excluded from Cloudflare Rocket Loader and similar script optimizations.
+- Fix: Fixed several WooCommerce issues. The checkout script no longer errors when a "delay JavaScript" optimization runs it before jQuery, which previously also broke WooCommerce's own checkout scripts (country and state fields, and the order review). On a block-based checkout the widget no longer waits for jQuery, and other Turnstile widgets on that page now render correctly. The "Click here to login" toggle now re-renders its widget reliably.
+- Fix: Fixed the Turnstile widget never appearing in the Blocksy theme's header account modal, which prevented logging in or registering through it. Blocksy only adds those forms to the page when the modal is opened, so the widget is now rendered at that point, and refreshed if the modal is re-opened. The Blocksy integration also now loads when a Blocksy child theme is active.
+- Fix: Fixed a conflict with FluentAuth's email two-factor and magic login, where the second step could fail with a Turnstile error because that request does not carry a token.
+- Fix: Fixed a conflict with Simple Membership (WP Simple Membership) where a member logging in was not also logged into their WordPress user account, breaking is_user_logged_in() conditional logic, .htaccess file protection, and the "Force WP User Synchronization" feature. The login mirror to WordPress is no longer blocked, as the member has already passed Simple Membership's own login validation.
+- Security: Fixed a vulnerability in the Forminator integration where a successful Turnstile validation was cached against a client-supplied form value instead of the single-use token, potentially allowing one solved challenge to be reused to bypass verification. The cache is now bound to the token, as with the other integrations, and is short-lived. (Reported by Meher Sudhakar Abbireddi via WPScan.)
 
 = Version 1.41.1 - 22nd June 2026 =
 - Tweak: Added a view button to show the secret key in the settings page, which is hidden by default.

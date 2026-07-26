@@ -59,7 +59,7 @@ function cfturnstile_field_show($button_id = '', $callback = '', $form_name = ''
 			if(!$refresh_timeout) { $refresh_timeout = 'auto'; }
 		?>
 		<div id="cf-turnstile<?php echo esc_attr($unique_id); ?>"
-		class="cf-turnstile<?php if($class) { echo " " . esc_attr($class); } ?>" <?php if (get_option('cfturnstile_disable_button')) { ?>data-callback="<?php echo esc_attr($callback); ?>"<?php } ?>
+		class="cf-turnstile<?php if($class) { echo " " . esc_attr($class); } ?>"
 		data-sitekey="<?php echo esc_attr($key); ?>"
 		data-theme="<?php echo esc_attr($theme); ?>"
 		data-language="<?php echo esc_attr($language); ?>"
@@ -162,22 +162,56 @@ function cfturnstile_failed_text($unique_id) {
 
 /**
  * Render Turnstile (Explicitly)
+ *
+ * Adds the widget id to the queue set up by cfturnstile_api_bootstrap(). Whether the API has
+ * loaded yet does not matter - the queue is a plain global array, drained on Cloudflare's
+ * onload callback and again whenever a widget is added.
  */
 add_action("cfturnstile_after_field", "cfturnstile_force_render", 10, 1);
 function cfturnstile_force_render($unique_id = '') {
-	if(function_exists('cfturnstile_is_block_based_checkout') && cfturnstile_is_block_based_checkout()) {
+	$unique_id = sanitize_text_field($unique_id);
+	// On a block based checkout the checkout widget is rendered by woocommerce.js, which also
+	// wires it to the wc/store/checkout data store. Skip only that one widget - anything else
+	// on the same page (a comment form, a shortcode) still needs rendering here, because the
+	// API is loaded in explicit mode and nothing else would ever render it.
+	if ( '-woo-checkout' === $unique_id && function_exists('cfturnstile_is_block_based_checkout') && cfturnstile_is_block_based_checkout() ) {
 		return;
 	}
-	$unique_id = sanitize_text_field($unique_id);
 	if($unique_id) {
+		$escaped_id = esc_js($unique_id);
+		$script = '(window.cfturnstileQueue=window.cfturnstileQueue||[]).push("' . $escaped_id . '");if(window.cfturnstileRender)window.cfturnstileRender();';
+
+		// With no footer left to print into, an enqueue silently goes nowhere and the widget
+		// would never render. Emit the script with the markup instead.
+		if ( cfturnstile_footer_scripts_unavailable() ) {
+			// $script is static apart from an esc_js() escaped element id.
+			echo '<script data-cfasync="false">' . $script . '</script>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			return;
+		}
+
 		if ( ! wp_script_is('cfturnstile-render', 'registered') ) {
 			wp_register_script('cfturnstile-render', '', array('cfturnstile'), false, array('in_footer' => true));
 		}
 		wp_enqueue_script('cfturnstile-render');
-		$escaped_id = esc_js($unique_id);
-		$script = '(function(){var a=0,d=false,q=false;function r(){if(d)return;var e=document.getElementById("cf-turnstile' . $escaped_id . '");if(!e)return;if(e.innerHTML.trim()){d=true;return;}if(window.turnstile&&typeof window.turnstile.render==="function"){try{window.turnstile.render(e);d=true;}catch(_){}}}function w(){r();if(d)return;if(window.turnstile&&typeof window.turnstile.ready==="function"&&!q){q=true;try{window.turnstile.ready(r);}catch(_){}}if(!d&&a++<100){setTimeout(w,100);}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",w);}else{w();}})();';
 		wp_add_inline_script('cfturnstile-render', $script);
 	}
+}
+
+/**
+ * Whether an enqueued footer script can still reach the browser for this request.
+ *
+ * @return bool True when the footer has gone (or never existed) and scripts must be inlined.
+ */
+function cfturnstile_footer_scripts_unavailable() {
+	if ( wp_doing_ajax() ) {
+		return true;
+	}
+	if ( defined('REST_REQUEST') && REST_REQUEST ) {
+		return true;
+	}
+	// wp_print_footer_scripts covers the front end, wp-login.php and embeds; admin screens print
+	// their footer scripts on admin_print_footer_scripts instead.
+	return did_action('wp_print_footer_scripts') || did_action('admin_print_footer_scripts');
 }
 
 /**
@@ -320,7 +354,7 @@ add_shortcode('simple-turnstile', 'cfturnstile_shortcode');
 add_action('cfturnstile_display_widget', 'cfturnstile_shortcode', 10, 0);
 function cfturnstile_shortcode() {
 	ob_start();
-	echo cfturnstile_field_show('', '');
+	echo cfturnstile_field_show('', '', '', '-' . wp_rand());
 	$thecontent = ob_get_contents();
 	ob_end_clean();
 	wp_reset_postdata();

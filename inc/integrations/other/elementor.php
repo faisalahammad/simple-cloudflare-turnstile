@@ -56,7 +56,8 @@ if(get_option('cfturnstile_elementor')) {
     // Enqueue Turnstile API script (only when not in failsafe UI mode)
     if ( $failsafe_mode === '' && !wp_script_is('cfturnstile', 'enqueued')) {
       $defer = get_option('cfturnstile_defer_scripts', 1) ? array('strategy' => 'defer') : array();
-      wp_enqueue_script("cfturnstile", "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", array(), null, $defer);
+      cfturnstile_register_api($defer);
+      wp_enqueue_script('cfturnstile');
     }
     
     // Enqueue our custom Elementor integration script

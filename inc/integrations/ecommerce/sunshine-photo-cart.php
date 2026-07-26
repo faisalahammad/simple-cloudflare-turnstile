@@ -73,7 +73,8 @@ function cfturnstile_sunshine_enqueue_scripts() {
 	// Enqueue the Turnstile API with explicit render mode for manual control.
 	if ( ! wp_script_is( 'cfturnstile', 'enqueued' ) ) {
 		$defer = get_option( 'cfturnstile_defer_scripts' ) ? array( 'strategy' => 'defer' ) : array();
-		wp_enqueue_script( 'cfturnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit', array(), null, $defer );
+		cfturnstile_register_api( $defer );
+		wp_enqueue_script( 'cfturnstile' );
 	}
 }
 add_action( 'wp_enqueue_scripts', 'cfturnstile_sunshine_enqueue_scripts', 10 );

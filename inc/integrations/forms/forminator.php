@@ -27,7 +27,7 @@ if(get_option('cfturnstile_forminator')) {
             if ( $failsafe_mode === '' ) {
                 // if cfturnstile script doesnt exist, enqueue it
                 if(!wp_script_is('cfturnstile', 'enqueued')) {
-                    wp_register_script("cfturnstile", "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", array(), '', 'true');
+                    cfturnstile_register_api(true);
                     wp_print_scripts('cfturnstile');
                 }
             }
@@ -96,18 +96,8 @@ if(get_option('cfturnstile_forminator')) {
 	function cfturnstile_forminator_check($submit_errors, $form_id, $field_data_array){
         if(!cfturnstile_form_disable($form_id, 'cfturnstile_forminator_disable')) {
 
-            // Forminator may call this hook multiple times for the same logical submission,
-            // so we use a transient to cache successful validations for a short time.
-            $form_uid  = isset($_POST['form_uid']) ? sanitize_text_field(wp_unslash($_POST['form_uid'])) : '';
-            $cache_key = '';
-            if ($form_uid !== '') {
-                $cache_key = 'cfturnstile_forminator_' . md5($form_id . '|' . $form_uid);
-                $cached    = get_transient($cache_key);
-                if (is_array($cached) && isset($cached['success']) && $cached['success'] === true) {
-                    return $submit_errors;
-                }
-            }
-
+            // Normalize Forminator's field data (provided in several shapes) so we can
+            // read the Turnstile token from the submission.
             $posted_data = array();
             if (is_array($field_data_array)) {
                 foreach ($field_data_array as $key => $val) {
@@ -146,6 +136,18 @@ if(get_option('cfturnstile_forminator')) {
                 $token = sanitize_text_field($_POST['cf-turnstile-response']);
             }
 
+            // Forminator may invoke this hook several times for one submission. Cache the pass
+            // against the single-use token itself, never a client-supplied form_uid, so it can
+            // only ever be re-served for the token actually verified.
+            //
+            // Kept short: Cloudflare rejects a token the second time it reaches siteverify, so
+            // the cache lifetime is exactly the window in which that guarantee is bypassed.
+            $verified_key = 'cfturnstile_forminator_' . $form_id;
+            $verified_ttl = 30;
+            if ($token !== '' && cfturnstile_get_verified($verified_key, $token)) {
+                return $submit_errors;
+            }
+
             $_post_backup = array();
             $sync_keys = array(
                 'cf-turnstile-response',
@@ -177,8 +179,8 @@ if(get_option('cfturnstile_forminator')) {
             $success = (is_array($check) && isset($check['success'])) ? $check['success'] : false;
             if($success != true) {
                 $submit_errors[]['submit'] = cfturnstile_failed_message();
-            } elseif ($cache_key !== '') {
-                set_transient($cache_key, array('success' => true), 5 * MINUTE_IN_SECONDS);
+            } elseif ($token !== '') {
+                cfturnstile_set_verified($verified_key, $token, $verified_ttl);
             }
         }
         return $submit_errors;

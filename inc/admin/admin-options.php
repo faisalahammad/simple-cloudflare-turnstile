@@ -613,7 +613,7 @@ function cfturnstile_settings_page() {
 						<th scope="row"><?php echo esc_html__('IP Addresses', 'simple-cloudflare-turnstile'); ?></th>
 						<td>
 							<textarea style="width: 240px;" name="cfturnstile_whitelist_ips"><?php echo sanitize_textarea_field(get_option('cfturnstile_whitelist_ips')); ?></textarea>
-							<br /><i style="font-size: 10px;"><?php echo esc_html__('One per line. Wildcards are not supported. All visitors with listed IP addresses will not see the Turnstile challenge. Warning: If an attacker knows one of the whitelisted IP addresses, they might be able to spoof that address to bypass Turnstile.', 'simple-cloudflare-turnstile'); ?></i>
+							<br /><i style="font-size: 10px;"><?php echo esc_html__('One per line. Enter individual IP addresses (IPv4 or IPv6) or CIDR ranges (e.g. 203.0.113.0/24 or 2001:db8::/32). Use a range if visitors have a dynamic or dual-stack (IPv4/IPv6) address that changes. All visitors with matching IP addresses will not see the Turnstile challenge. Warning: If an attacker knows one of the whitelisted IP addresses, they might be able to spoof that address to bypass Turnstile.', 'simple-cloudflare-turnstile'); ?></i>
 						</td>
 					</tr>
 

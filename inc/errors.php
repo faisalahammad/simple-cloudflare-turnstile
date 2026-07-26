@@ -28,7 +28,7 @@ function cfturnstile_tested_notice() {
 
 /**
  * Display persistent admin warning if an invalid secret key was detected.
- * Dismissible via AJAX — stays until the admin clicks to dismiss.
+ * Dismissible via AJAX - stays until the admin clicks to dismiss.
  */
 add_action( 'admin_notices', 'cfturnstile_invalid_secret_notice' );
 function cfturnstile_invalid_secret_notice() {

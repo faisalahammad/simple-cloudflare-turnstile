@@ -100,15 +100,76 @@ if(get_option('cfturnstile_login')) {
 	}
 	add_filter( 'login_form_middle', 'cfturnstile_wp_login_form_field', 20, 1 );
 
-	/* Re-render Turnstile shortly after clicking the login button, in case the submission fails (e.g. used/expired token) */
+	/*
+	 * Refresh the Turnstile token for a retry after a FAILED login attempt (the token
+	 * is single-use and has already been consumed). Triggered only when a login error
+	 * is shown - never on a submit click - so it does not disturb a successful first
+	 * factor that is waiting on a 2FA prompt (e.g. Wordfence / FluentAuth), where the
+	 * consumed token must survive to the final POST.
+	 */
 	function cfturnstile_login_rerender_script() {
 		if ( ! wp_script_is( 'cfturnstile', 'enqueued' ) ) {
 			return;
 		}
-		$script = 'document.addEventListener("DOMContentLoaded",function(){var b=document.getElementById("wp-submit");if(!b)return;b.addEventListener("click",function(){setTimeout(function(){if(typeof turnstile==="undefined")return;var w=document.querySelector("#loginform .cf-turnstile");if(!w)return;try{turnstile.reset(w);}catch(e){try{turnstile.remove(w);turnstile.render(w);}catch(e2){}}},2000);});});';
+		$script = <<<'JS'
+document.addEventListener("DOMContentLoaded", function () {
+	var SELECTOR = "#login_error, .wfls-login-message, .error.text-danger";
+	var lastReset = 0, hasReset = false;
+	function twoFactorPromptOpen() {
+		// Wordfence 2FA overlay or FluentAuth 2FA form: first factor succeeded, keep the token.
+		return !!document.querySelector("#wfls-prompt-overlay, #wfls-token, #fls_2fa_form, .fls_2fs");
+	}
+	function resetWidget() {
+		if (typeof turnstile === "undefined" || twoFactorPromptOpen()) return;
+		var w = document.querySelector("#loginform .cf-turnstile");
+		if (!w) return;
+		// A single failure can produce several mutations. Resetting once per second
+		// avoids throwing away a fresh challenge we just asked Turnstile for.
+		var now = new Date().getTime();
+		if (hasReset && now - lastReset < 1000) return;
+		hasReset = true;
+		lastReset = now;
+		try { turnstile.reset(w); } catch (e) {}
+	}
+	function isLoginError(node) {
+		if (!node) return false;
+		// An error element was inserted, or one was inserted inside a wrapper.
+		if (node.nodeType === 1) {
+			return node.matches(SELECTOR) || !!node.querySelector(SELECTOR);
+		}
+		// Text was written into an error container that was already in the DOM. Login
+		// forms that keep a permanent (empty) error node and only swap its message
+		// never add an element, so the check above alone would miss the failure.
+		if (node.nodeType === 3 && node.nodeValue && node.nodeValue.trim() && node.parentNode && node.parentNode.closest) {
+			return !!node.parentNode.closest(SELECTOR);
+		}
+		return false;
+	}
+	// Full-reload failures (e.g. plain wp-login.php wrong password): error is already in the DOM.
+	if (document.getElementById("login_error")) {
+		resetWidget();
+	}
+	// AJAX failures (e.g. Wordfence inline wrong password): error injected without a reload.
+	if (window.MutationObserver) {
+		new MutationObserver(function (mutations) {
+			for (var i = 0; i < mutations.length; i++) {
+				var m = mutations[i];
+				if (m.type === "characterData") {
+					if (isLoginError(m.target)) { resetWidget(); return; }
+					continue;
+				}
+				for (var j = 0; j < m.addedNodes.length; j++) {
+					if (isLoginError(m.addedNodes[j])) { resetWidget(); return; }
+				}
+			}
+		}).observe(document.body, { childList: true, subtree: true, characterData: true });
+	}
+});
+JS;
 		wp_add_inline_script( 'cfturnstile', $script );
 	}
 	add_action( 'login_enqueue_scripts', 'cfturnstile_login_rerender_script', 20 );
+
 }
 
 /* 
@@ -216,12 +277,18 @@ if(get_option('cfturnstile_comment') && !cft_is_plugin_active('wpdiscuz/class.Wp
 				$submit_before .= '<span class="cf-turnstile-comment" style="pointer-events: none; opacity: 0.5;">';
 				$submit_after .= "</span>";
 			}
-			$submit_after .= cfturnstile_force_render("-c-" . $unique_id);
+			// force_render() echoes its script when there is no footer to enqueue into (an AJAX
+			// comment form), so capture it and keep it after the widget markup.
+			ob_start();
+			cfturnstile_force_render("-c-" . $unique_id);
+			$submit_after .= ob_get_clean();
 			// Script to render turnstile when clicking reply
 			$script = '<script type="text/javascript">document.addEventListener("DOMContentLoaded", function() { document.body.addEventListener("click", function(event) { if (event.target.matches(".comment-reply-link, #cancel-comment-reply-link")) { turnstile.reset(".comment-form .cf-turnstile"); } }); });</script>';
-			// If ajax comments are enabled, we need to re-render the turnstile after the comment is submitted
+			// If ajax comments are enabled, re-render the turnstile after the comment is submitted.
+			// Guarded: turnstile.remove() throws on an element it never rendered - the normal state
+			// for a comment form that arrived over AJAX - which would skip the render() after it.
 			if(cft_is_plugin_active('wpdiscuz/class.WpdiscuzCore.php') || cft_is_plugin_active('wp-ajaxify-comments/wp-ajaxify-comments.php') || get_option('cfturnstile_ajax_comments')) {
-				$script .= '<script type="text/javascript">jQuery(document).ajaxComplete(function() { setTimeout(function() { turnstile.remove("#cf-turnstile-c-'.$unique_id.'");turnstile.render("#cf-turnstile-c-'.$unique_id.'"); }, 1000); });</script>';
+				$script .= '<script type="text/javascript">jQuery(document).ajaxComplete(function() { setTimeout(function() { if (typeof turnstile === "undefined") { return; } var el = document.getElementById("cf-turnstile-c-'.$unique_id.'"); if (!el) { return; } try { turnstile.remove(el); } catch (e) {} try { turnstile.render(el); } catch (e) {} }, 1000); });</script>';
 			}
 			// Return button
 			return $submit_before . $submit_button . $submit_after . $script;
