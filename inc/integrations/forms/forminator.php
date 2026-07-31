@@ -43,13 +43,17 @@ if(get_option('cfturnstile_forminator')) {
             ?>
             <?php if ( $failsafe_mode === '' ) { ?>
             <script>
+            // Explicit rendering ignores data-*-callback, which would leave the submit button disabled.
+            function cfturnstileForminatorOpts(target) {
+                return (typeof window.cfturnstileOpts === 'function') ? window.cfturnstileOpts(target) : {};
+            }
             // On ajax.complete run turnstile.render if element is empty
             jQuery(document).ajaxComplete(function() {
                 setTimeout(function() {
                     if (document.getElementById('cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>')) {
                         if(!document.getElementById('cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>').innerHTML.trim()) {
                                 turnstile.remove('#cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>');
-                                turnstile.render('#cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>');
+                                turnstile.render('#cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>', cfturnstileForminatorOpts('#cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>'));
                         }
                     }
                 }, 1000);
@@ -67,7 +71,7 @@ if(get_option('cfturnstile_forminator')) {
                     if(document.getElementById('cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>')) {
                         setTimeout(function() {
                             turnstile.remove('#cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>');
-                            turnstile.render('#cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>');
+                            turnstile.render('#cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>', cfturnstileForminatorOpts('#cf-turnstile-fmntr-<?php echo esc_html($form_id); ?>'));
                         }, 1000);
                     }
                 });
@@ -94,6 +98,12 @@ if(get_option('cfturnstile_forminator')) {
 	// Forminator Forms Check
 	add_action('forminator_custom_form_submit_errors', 'cfturnstile_forminator_check', 10, 3);
 	function cfturnstile_forminator_check($submit_errors, $form_id, $field_data_array){
+        // Forminator runs its error check several times for a single submission (once from
+        // prepare_fields_info(), again after file upload handling, again for subscription
+        // payment intents). Remember the passes made in this request so the repeats never
+        // re-verify a token that has already been spent.
+        static $verified_tokens = array();
+
         if(!cfturnstile_form_disable($form_id, 'cfturnstile_forminator_disable')) {
 
             // Normalize Forminator's field data (provided in several shapes) so we can
@@ -136,15 +146,23 @@ if(get_option('cfturnstile_forminator')) {
                 $token = sanitize_text_field($_POST['cf-turnstile-response']);
             }
 
-            // Forminator may invoke this hook several times for one submission. Cache the pass
-            // against the single-use token itself, never a client-supplied form_uid, so it can
-            // only ever be re-served for the token actually verified.
-            //
-            // Kept short: Cloudflare rejects a token the second time it reaches siteverify, so
-            // the cache lifetime is exactly the window in which that guarantee is bypassed.
+            // The pass is cached against the single-use token itself, never a client-supplied
+            // form_uid, so it can only ever be re-served for the token actually verified.
+            $memo_key     = $form_id . '|' . $token;
             $verified_key = 'cfturnstile_forminator_' . $form_id;
-            $verified_ttl = 30;
+            $verified_ttl = 10;
+
+            // Repeat calls within this request cost the token nothing.
+            if ($token !== '' && isset($verified_tokens[$memo_key])) {
+                return $submit_errors;
+            }
+
+            // Cross-request fallback, for the flows that re-submit the same token in a follow-up
+            // request. Consumed on read, so a solved challenge survives exactly one extra request
+            // rather than being replayable for the whole lifetime of the transient.
             if ($token !== '' && cfturnstile_get_verified($verified_key, $token)) {
+                cfturnstile_clear_verified($verified_key, $token);
+                $verified_tokens[$memo_key] = true;
                 return $submit_errors;
             }
 
@@ -180,6 +198,7 @@ if(get_option('cfturnstile_forminator')) {
             if($success != true) {
                 $submit_errors[]['submit'] = cfturnstile_failed_message();
             } elseif ($token !== '') {
+                $verified_tokens[$memo_key] = true;
                 cfturnstile_set_verified($verified_key, $token, $verified_ttl);
             }
         }

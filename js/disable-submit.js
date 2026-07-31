@@ -191,6 +191,13 @@ function turnstilesureformsCallback() {
         el.style.opacity = '1';
     });
 }
+/* Jetpack */
+function turnstileJetpackCallback() {
+    document.querySelectorAll('.wp-block-jetpack-contact-form button').forEach(function(el) {
+        el.style.pointerEvents = 'auto';
+        el.style.opacity = '1';
+    });
+}
 /* Sunshine Photo Cart */
 function turnstileSunshineCheckoutCallback() {
     document.querySelectorAll('#sunshine--checkout--submit').forEach(function(el) {

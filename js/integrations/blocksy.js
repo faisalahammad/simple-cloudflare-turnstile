@@ -10,6 +10,11 @@
     var MODAL = '#account-modal, .ct-account-modal';
     var timer = null;
 
+    // Explicit rendering ignores data-*-callback, which would leave the submit button disabled.
+    function cftOpts( el ) {
+        return ( typeof window.cfturnstileOpts === 'function' ) ? window.cfturnstileOpts( el ) : {};
+    }
+
     function refresh() {
         if ( typeof turnstile === 'undefined' ) {
             return;
@@ -23,7 +28,7 @@
                 try { turnstile.reset( el ); } catch ( e ) {}
             } else {
                 // First open: this is the widget's only chance to be rendered.
-                try { turnstile.render( el ); } catch ( e ) {}
+                try { turnstile.render( el, cftOpts( el ) ); } catch ( e ) {}
             }
         }
     }

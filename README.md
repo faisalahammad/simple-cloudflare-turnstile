@@ -1,4 +1,4 @@
-# Simple CAPTCHA Alternative with Cloudflare Turnstile
+# Simple CAPTCHA with Cloudflare Turnstile
 
 Add Cloudflare Turnstile to WordPress, WooCommerce, Contact Forms & more.
 
@@ -144,7 +144,7 @@ More integrations may be added in the future, based on user feedback. So if you 
 
 ### I need help, can I get support?
 
-Please bare in mind, the [Simple CAPTCHA Alternative with Cloudflare Turnstile](https://simpleturnstile.com/) plugin is 100% free, developed as a way to give back to the WordPress community.
+Please bare in mind, the [Simple CAPTCHA with Cloudflare Turnstile](https://simpleturnstile.com/) plugin is 100% free, developed as a way to give back to the WordPress community.
 
 You can post a support thread on the WordPress.org forums to get help from the community, and we will also keep an eye on this quite frequently, providing support and answers where possible. However, we can not guarantee an answer every single support ticket.
 

@@ -16,14 +16,159 @@ function cfturnstile_create_menu() {
     );
 }
 
+/**
+ * Checks a Turnstile secret key with Cloudflare, without needing a solved challenge.
+ *
+ * Sends a deliberately invalid response token. Cloudflare only reports an "input-secret" error
+ * once the secret itself is rejected, so being told the response is the problem means the secret
+ * was accepted.
+ *
+ * @param string $secret Optional. Secret key to check. Defaults to the saved key.
+ * @return bool|null True if Cloudflare accepted the secret, false if it is empty or Cloudflare
+ *                   rejected it, null if Cloudflare could not be reached or gave an answer we
+ *                   can not interpret.
+ */
+function cfturnstile_verify_secret( $secret = '' ) {
+
+	if ( empty( $secret ) ) {
+		$secret = sanitize_text_field( get_option('cfturnstile_secret') );
+	}
+	if ( empty( $secret ) ) {
+		return false;
+	}
+
+	$verify = wp_remote_post(
+		'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+		array(
+			'timeout' => 10,
+			'body'    => array(
+				'secret'   => $secret,
+				'response' => 'cfturnstile-key-check',
+			),
+		)
+	);
+
+	if ( is_wp_error( $verify ) || 200 !== wp_remote_retrieve_response_code( $verify ) ) {
+		return null;
+	}
+
+	$response = json_decode( wp_remote_retrieve_body( $verify ), true );
+	if ( ! is_array( $response ) ) {
+		return null;
+	}
+
+	// Cloudflare's "always passes" testing secret accepts the dummy response outright.
+	if ( ! empty( $response['success'] ) ) {
+		return true;
+	}
+
+	$errors = ( isset( $response['error-codes'] ) && is_array( $response['error-codes'] ) ) ? $response['error-codes'] : array();
+
+	// Checked before the response codes below, so that a reply carrying both is still read as
+	// the secret being the problem.
+	if ( array_intersect( array( 'invalid-input-secret', 'missing-input-secret' ), $errors ) ) {
+		return false;
+	}
+
+	// Cloudflare got past the secret and only objected to the dummy response.
+	if ( array_intersect( array( 'invalid-input-response', 'missing-input-response', 'timeout-or-duplicate' ), $errors ) ) {
+		return true;
+	}
+
+	return null;
+
+}
+
 // Keys Updated
 add_action('update_option_cfturnstile_key', 'cfturnstile_keys_updated', 10);
 add_action('update_option_cfturnstile_secret', 'cfturnstile_keys_updated', 10);
 function cfturnstile_keys_updated() {
-	update_option( 'cfturnstile_tested', 'no' );
+
+	// Saving both keys together fires this twice.
+	static $handled = false;
+	if ( $handled ) {
+		return;
+	}
+	$handled = true;
+
 	delete_option( 'cfturnstile_invalid_secret_notice' );
 	delete_option( 'cfturnstile_soft_tested' );
 	delete_transient( 'cfturnstile_invalid_secret_throttle' );
+
+	// Changed by an admin in wp-admin, either by saving the settings page or by importing
+	// settings. Both land them back on the settings page with the manual test in front of them,
+	// and that test proves the site key renders a working widget as well as the secret being
+	// accepted, so hold the integrations back until they run it.
+	// WP-CLI is excluded explicitly: "wp --user=1 option update" runs as an administrator, but
+	// there is still no settings page in front of anyone.
+	$by_admin = ! ( defined( 'WP_CLI' ) && WP_CLI ) && is_admin() && current_user_can( 'manage_options' );
+
+	if ( $by_admin ) {
+		update_option( 'cfturnstile_tested', 'no' );
+		return;
+	}
+
+	// Changed programmatically instead (WP-CLI, REST, a migration or provisioning script). Nobody
+	// is going to see the manual test, so resetting the flag here would switch every integration
+	// off and leave the site unprotected until somebody happened to log in. Ask Cloudflare about
+	// the new secret at the end of the request instead, once both key options have been written.
+	add_action( 'shutdown', 'cfturnstile_keys_updated_verify' );
+
+}
+
+// Verify programmatically changed keys, rather than disabling Turnstile until a manual test
+function cfturnstile_keys_updated_verify() {
+
+	// A key was removed rather than rotated. Turnstile is inert without both anyway.
+	if ( empty( get_option( 'cfturnstile_key' ) ) || empty( get_option( 'cfturnstile_secret' ) ) ) {
+		update_option( 'cfturnstile_tested', 'no' );
+		return;
+	}
+
+	$valid = cfturnstile_verify_secret();
+
+	// Cloudflare accepted the new secret, so keep protecting the site.
+	if ( true === $valid ) {
+		update_option( 'cfturnstile_tested', 'yes' );
+		return;
+	}
+
+	// Cloudflare could not be reached, or answered with something we can not read. Leave the
+	// current state alone rather than dropping protection over a temporary network problem: a
+	// genuinely bad secret is still caught on the first real verification, which raises the
+	// invalid secret notice and emails the admin.
+	if ( null === $valid ) {
+		return;
+	}
+
+	// Cloudflare rejected the secret. Turning Turnstile off is right here, but say so loudly,
+	// since there is no settings page in front of anyone to self-heal this.
+	// An empty option counts as active, matching how the integrations decide whether to load.
+	$tested     = get_option( 'cfturnstile_tested' );
+	$was_active = ( 'yes' === $tested || empty( $tested ) );
+
+	update_option( 'cfturnstile_tested', 'no' );
+	update_option( 'cfturnstile_invalid_secret_notice', '1' );
+
+	if ( ! $was_active ) {
+		return;
+	}
+
+	$site_name    = get_bloginfo( 'name' );
+	$settings_url = admin_url( 'options-general.php?page=cfturnstile' );
+	$subject      = sprintf(
+		/* translators: %s: Site name. */
+		__( '[%s] Cloudflare Turnstile: Invalid Secret Key Detected', 'simple-cloudflare-turnstile' ),
+		$site_name
+	);
+	$message = sprintf(
+		/* translators: 1: Site name, 2: Settings page URL. */
+		__( "The Turnstile API keys on %1\$s have been changed, and Cloudflare has rejected the new secret key (error: invalid-input-secret).\n\nTurnstile has been switched off on your forms until the keys are corrected and tested, so your forms are not currently protected.\n\nPlease check your API keys on the settings page:\n%2\$s", 'simple-cloudflare-turnstile' ),
+		$site_name,
+		$settings_url
+	);
+	wp_mail( get_option( 'admin_email' ), $subject, $message );
+
 }
 
 // Admin test form to check Turnstile response
@@ -115,7 +260,7 @@ function cfturnstile_settings_page() {
 ?>
 	<div class="sct-wrap wrap">
 
-		<h1 style="font-weight: bold;"><?php echo esc_html__('Simple CAPTCHA Alternative with Cloudflare Turnstile', 'simple-cloudflare-turnstile'); ?></h1>
+		<h1 style="font-weight: bold;"><?php echo esc_html__('Simple CAPTCHA with Cloudflare Turnstile', 'simple-cloudflare-turnstile'); ?></h1>
 
 		<?php
 		// Check Cloudflare Status (cached for 2 minutes to avoid an HTTP request on every settings page load)

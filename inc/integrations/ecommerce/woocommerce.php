@@ -96,6 +96,48 @@ function cfturnstile_is_non_checkout_ajax() {
 	return false;
 }
 
+/**
+ * Check whether a payment gateway has halted this checkout request for its own two-phase flow.
+ *
+ * Some gateways run a two-stage checkout: they let WooCommerce validate the order, abort the
+ * request with a marker error notice, perform tokenisation and 3DS in the browser, then resubmit
+ * the very same form. Both stages post to wc-ajax=checkout, so they are not caught by
+ * cfturnstile_is_non_checkout_ajax(). The Turnstile token is unchanged on the resubmission, and
+ * Turnstile tokens are single-use, so the verification flag has to survive the first stage.
+ *
+ * @return bool True if the current request was halted for a gateway resubmission.
+ */
+function cfturnstile_woo_checkout_deferred_by_gateway() {
+	// Marker notices added by gateways that abort checkout and resubmit the same form.
+	$markers = apply_filters( 'cfturnstile_woo_deferred_checkout_markers', array(
+		'globalpayments_gpapi_checkout_validated', // GlobalPayments GPAPI, 3DS enabled.
+	) );
+
+	if ( ! is_array( $markers ) || empty( $markers ) || ! function_exists( 'wc_get_notices' ) || ! function_exists( 'WC' ) || ! WC()->session ) {
+		return false;
+	}
+
+	$notices = wc_get_notices( 'error' );
+	if ( empty( $notices ) ) {
+		return false;
+	}
+
+	foreach ( $notices as $notice ) {
+		// WooCommerce 3.9+ stores notices as arrays, older versions as plain strings.
+		$message = ( is_array( $notice ) && isset( $notice['notice'] ) ) ? $notice['notice'] : $notice;
+		if ( ! is_string( $message ) ) {
+			continue;
+		}
+		foreach ( $markers as $marker ) {
+			if ( $marker && false !== strpos( $message, $marker ) ) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 // Woo Checkout Check
 if(get_option('cfturnstile_woo_checkout')) {
 	// WooCommerce Checkout
@@ -257,6 +299,34 @@ if(get_option('cfturnstile_woo_checkout')) {
 	// Clear checkout verification transients after all validation hooks have run
 	add_action('woocommerce_after_checkout_validation', 'cfturnstile_woo_checkout_clear_transient', 9999);
 	function cfturnstile_woo_checkout_clear_transient() {
+		$deadline_key = cfturnstile_transient_key( 'cfturnstile_checkout_deferred_until' );
+
+		// A gateway may have halted this request to run 3DS before resubmitting the same form with
+		// the same token, so keep the pass alive for the resubmission. Checking verified first
+		// matters: the marker is added even when the challenge failed, so extending an existing
+		// pass is safe, but granting one here would be a bypass.
+		if ( cfturnstile_get_verified( 'cfturnstile_checkout_checked' ) && cfturnstile_woo_checkout_deferred_by_gateway() ) {
+			// 3DS can keep the customer busy well past the 120 seconds a single request needs.
+			$expire = (int) apply_filters( 'cfturnstile_woo_deferred_checkout_expiry', 900 );
+			if ( $expire > 0 && $deadline_key ) {
+				// Fixed on the first deferral, so repeated markers cannot extend the pass forever.
+				$deadline = (int) get_transient( $deadline_key );
+				if ( ! $deadline ) {
+					$deadline = time() + $expire;
+					set_transient( $deadline_key, $deadline, $expire );
+				}
+				$remaining = $deadline - time();
+				if ( $remaining > 0 ) {
+					cfturnstile_set_verified( 'cfturnstile_checkout_checked', '', $remaining );
+					return;
+				}
+			}
+		}
+
+		// Either the gateway resubmitted and the flow is over, or the deadline has passed.
+		if ( $deadline_key ) {
+			delete_transient( $deadline_key );
+		}
 		cfturnstile_clear_verified( 'cfturnstile_checkout_checked' );
 	}
 

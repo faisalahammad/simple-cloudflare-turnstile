@@ -129,9 +129,10 @@ function cfturnstile_sunshine_modal_scripts() {
 				sctSunshineRendered[elId] = true;
 
 				try {
-					turnstile.render('#' + elId, {
-						sitekey: '<?php echo esc_js( $key ); ?>'
-					});
+					// Explicit rendering ignores data-*-callback, so pass the real functions.
+					var sctOpts = (typeof window.cfturnstileOpts === 'function') ? window.cfturnstileOpts('#' + elId) : {};
+					sctOpts.sitekey = '<?php echo esc_js( $key ); ?>';
+					turnstile.render('#' + elId, sctOpts);
 				} catch (e) {
 					// Reset if render failed
 					sctSunshineRendered[elId] = false;
@@ -451,9 +452,10 @@ if ( get_option( 'cfturnstile_sunshine_checkout' ) ) {
 					}
 
 					try {
-						turnstile.render('#' + elId, {
-							sitekey: '<?php echo esc_js( $key ); ?>'
-						});
+						// Explicit rendering ignores data-*-callback, so pass the real functions.
+						var sctOpts = (typeof window.cfturnstileOpts === 'function') ? window.cfturnstileOpts('#' + elId) : {};
+						sctOpts.sitekey = '<?php echo esc_js( $key ); ?>';
+						turnstile.render('#' + elId, sctOpts);
 					} catch (e) {
 						// Render error
 					}

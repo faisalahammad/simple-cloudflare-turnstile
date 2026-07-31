@@ -288,7 +288,7 @@ if(get_option('cfturnstile_comment') && !cft_is_plugin_active('wpdiscuz/class.Wp
 			// Guarded: turnstile.remove() throws on an element it never rendered - the normal state
 			// for a comment form that arrived over AJAX - which would skip the render() after it.
 			if(cft_is_plugin_active('wpdiscuz/class.WpdiscuzCore.php') || cft_is_plugin_active('wp-ajaxify-comments/wp-ajaxify-comments.php') || get_option('cfturnstile_ajax_comments')) {
-				$script .= '<script type="text/javascript">jQuery(document).ajaxComplete(function() { setTimeout(function() { if (typeof turnstile === "undefined") { return; } var el = document.getElementById("cf-turnstile-c-'.$unique_id.'"); if (!el) { return; } try { turnstile.remove(el); } catch (e) {} try { turnstile.render(el); } catch (e) {} }, 1000); });</script>';
+				$script .= '<script type="text/javascript">jQuery(document).ajaxComplete(function() { setTimeout(function() { if (typeof turnstile === "undefined") { return; } var el = document.getElementById("cf-turnstile-c-'.$unique_id.'"); if (!el) { return; } try { turnstile.remove(el); } catch (e) {} try { turnstile.render(el, (typeof window.cfturnstileOpts === "function" ? window.cfturnstileOpts(el) : {})); } catch (e) {} }, 1000); });</script>';
 			}
 			// Return button
 			return $submit_before . $submit_button . $submit_after . $script;

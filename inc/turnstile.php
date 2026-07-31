@@ -190,7 +190,7 @@ function cfturnstile_force_render($unique_id = '') {
 		}
 
 		if ( ! wp_script_is('cfturnstile-render', 'registered') ) {
-			wp_register_script('cfturnstile-render', '', array('cfturnstile'), false, array('in_footer' => true));
+			wp_register_script('cfturnstile-render', '', array(), false, array('in_footer' => true));
 		}
 		wp_enqueue_script('cfturnstile-render');
 		wp_add_inline_script('cfturnstile-render', $script);

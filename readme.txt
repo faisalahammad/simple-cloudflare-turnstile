@@ -4,7 +4,7 @@ Tags: cloudflare,turnstile,captcha,protect,spam
 Donate link: https://www.elliotsowersby.com/donate/
 Requires at least: 4.7
 Tested up to: 7.0
-Stable Tag: 1.42.0
+Stable Tag: 1.42.1
 License: GPLv3 or later.
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -163,7 +163,7 @@ More integrations may be added in the future, based on user feedback. So if you 
 
 = I need help, can I get support? =
 
-Please bare in mind, the <a href="https://simpleturnstile.com/">Simple CAPTCHA Alternative with Cloudflare Turnstile</a> plugin is 100% free, developed as a way to give back to the WordPress community.
+Please bare in mind, the <a href="https://simpleturnstile.com/">Simple CAPTCHA with Cloudflare Turnstile</a> plugin is 100% free, developed as a way to give back to the WordPress community.
 
 You can post a support thread on the WordPress.org forums to get help from the community, and we will also keep an eye on this quite frequently, providing support and answers where possible. However, we can not guarantee an answer every single support ticket.
 
@@ -208,6 +208,15 @@ If you are still having issues, please post a <a href="https://wordpress.org/sup
 You can report security bugs through the Patchstack Vulnerability Disclosure Program. The Patchstack team help validate, triage and handle any security vulnerabilities. [Report a security vulnerability.](https://patchstack.com/database/vdp/simple-cloudflare-turnstile)
 
 == Changelog ===
+
+= Version 1.42.1 - 27th July 2026 =
+- Fix: Fixed an issue since 1.42.0 where the submit button could stay disabled after the Turnstile challenge was completed, when the "Disable Submit Button" option is enabled. On the login form this could lock you out of your site.
+- Fix: Fixed the submit button staying disabled after the widget was re-rendered, such as after an AJAX comment or on the Blocksy account modal.
+- Fix: Fixed the submit button staying disabled on Jetpack forms when the "Disable Submit Button" option is enabled.
+- Fix: Fixed WooCommerce checkout failing with a "please verify that you are human" error when using the GlobalPayments GPAPI gateway with 3D Secure enabled.
+- Fix: Fixed the Turnstile API script loading render-blocking, even with the "Defer Scripts" option enabled.
+- Tweak: Changing the API keys programmatically, such as with WP-CLI or a provisioning script, no longer switches Turnstile off on every form until the manual test is run.
+- Tweak: Tightened the Forminator integration further, so a solved Turnstile challenge can no longer be re-used for up to 30 seconds.
 
 = Version 1.42.0 - 26th July 2026 =
 - New: Added support for CIDR ranges (IPv4 and IPv6) in the IP whitelist, e.g. 203.0.113.0/24 or 2001:db8::/32, so visitors can be whitelisted by subnet.

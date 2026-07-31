@@ -27,6 +27,11 @@
         return !!( e.target && e.target.closest && e.target.closest( selector ) );
     }
 
+    // Explicit rendering ignores data-*-callback, which would leave the submit button disabled.
+    function cfturnstileWooOpts( target ) {
+        return ( typeof window.cfturnstileOpts === 'function' ) ? window.cfturnstileOpts( target ) : {};
+    }
+
     /* Give the classic checkout widget a fresh token. Touches only the DOM and the global
        `turnstile`, so it is safe to call at any point. */
     function turnstileWooCheckoutReset() {
@@ -41,7 +46,7 @@
 
         // Woo replaced the container and left it empty: render a new widget into it.
         if ( !el.firstElementChild ) {
-            try { turnstile.render( el ); } catch ( e ) {}
+            try { turnstile.render( el, cfturnstileWooOpts( el ) ); } catch ( e ) {}
             return;
         }
 
@@ -53,7 +58,7 @@
 
         // reset() only fails when Turnstile no longer recognises the element, so rebuild it.
         try { turnstile.remove( el ); } catch ( e ) {}
-        try { turnstile.render( el ); } catch ( e ) {}
+        try { turnstile.render( el, cfturnstileWooOpts( el ) ); } catch ( e ) {}
     }
 
     /* "Show login" toggle: rebuild that widget once the panel is open. Bound natively on document
@@ -67,7 +72,7 @@
                 return;
             }
             try { turnstile.remove( '.sct-woocommerce-login' ); } catch ( err ) {}
-            try { turnstile.render( '.sct-woocommerce-login' ); } catch ( err ) {}
+            try { turnstile.render( '.sct-woocommerce-login', cfturnstileWooOpts( '.sct-woocommerce-login' ) ); } catch ( err ) {}
         }, 250 );
     } );
 
